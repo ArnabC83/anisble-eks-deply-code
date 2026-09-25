@@ -1,0 +1,71 @@
+---
+- name: Deploy NGINX application to EKS Cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    aws_region: "us-east-1"
+    eks_cluster_name: "my-eks-cluster"
+    kubeconfig_path: "~/.kube/config"
+    app_name: "nginx"
+    replica_count: 2
+    container_port: 80
+    service_port: 80
+
+  tasks:
+    - name: Set kubeconfig for EKS Cluster
+      command: >
+        aws eks update-kubeconfig
+        --region {{ aws_region }}
+        --name {{ eks_cluster_name }}
+        --kubeconfig {{ kubeconfig_path }}
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: Create NGINX Deployment
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: "{{ app_name }}-deployment"
+            labels:
+              app: "{{ app_name }}"
+          spec:
+            replicas: "{{ replica_count }}"
+            selector:
+              matchLabels:
+                app: "{{ app_name }}"
+            template:
+              metadata:
+                labels:
+                  app: "{{ app_name }}"
+              spec:
+                containers:
+                  - name: "{{ app_name }}"
+                    image: "nginx:latest"
+                    ports:
+                      - containerPort: "{{ container_port }}"
+
+    - name: Expose NGINX application via LoadBalancer Service
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ app_name }}-service"
+            labels:
+              app: "{{ app_name }}"
+          spec:
+            type: LoadBalancer
+            selector:
+              app: "{{ app_name }}"
+            ports:
+              - protocol: TCP
+                port: "{{ service_port }}"
+                targetPort: "{{ container_port }}"
